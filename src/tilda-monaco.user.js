@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tilda — Monaco HTML + публикация
 // @namespace    local.tilda.monaco
-// @version      1.1.7
-// @description  Monaco latest, темы, Prettier и публикация через штатные функции Тильды.
+// @version      1.1.9
+// @description  Monaco latest, темы, Prettier, минификация и публикация через штатные функции Тильды.
 // @match        https://tilda.ru/page/*
 // @match        https://tilda.cc/page/*
 // @run-at       document-end
@@ -11,10 +11,38 @@
 // @grant        unsafeWindow
 // @grant        GM_registerMenuCommand
 // @grant        GM_openInTab
+// @grant        GM_getResourceText
+// @resource     tmlStyles file:///Users/golygin/Downloads/tilda-monaco/src/tilda-monaco.css
 // ==/UserScript==
 
 // Monaco обновляется независимо от менеджера. У этого локального скрипта пока нет URL автообновления.
 (function (window) {
+  const css = GM_getResourceText("tmlStyles"),
+    styledDocuments = new WeakMap();
+
+  // Share one stylesheet per document; remove it when its last consumer stops.
+  function useStyles(doc) {
+    let entry = styledDocuments.get(doc);
+    if (!entry) {
+      const style = doc.createElement("style");
+      style.id = "tml-styles";
+      style.textContent = css;
+      doc.head.append(style);
+      entry = { style, users: 0 };
+      styledDocuments.set(doc, entry);
+    }
+    entry.users++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (--entry.users === 0) {
+        entry.style.remove();
+        styledDocuments.delete(doc);
+      }
+    };
+  }
+
   // Tilda Monaco HTML
   // Monaco latest is resolved once per page; editor/CSS/workers use that exact version.
   (function installTildaMonaco(frameMain) {
@@ -33,33 +61,7 @@
       return;
     }
     window.__tildaMonaco?.dispose();
-    document.getElementById("tml-panel-width")?.remove();
-    const panelStyle = document.createElement("style");
-    panelStyle.id = "tml-panel-width";
-    panelStyle.textContent = `
-      #editformsxl:has(.editrecordcontent_container_code, .tml-frame) {
-        width: 80vw !important; max-width: 100vw !important; box-sizing: border-box;
-      }
-      @media (max-width: 1000px) {
-        #editformsxl:has(.editrecordcontent_container_code, .tml-frame) { width: 100vw !important; }
-      }
-      .tml-pending { position: relative; height: var(--tml-loading-height); overflow: hidden; }
-      .tml-pending .ace_editor { visibility: hidden !important; pointer-events: none; }
-      .tml-loading {
-        position: absolute; inset: 0; z-index: 2; display: flex;
-        align-items: center; justify-content: center; gap: 10px;
-        background: var(--tml-loading-bg, #fff); color: var(--tml-loading-fg, #666);
-        font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      .tml-loading::before {
-        content: ""; width: 14px; height: 14px; border: 2px solid currentColor;
-        border-right-color: transparent; border-radius: 50%; opacity: .6;
-        animation: tml-spin 1s linear infinite;
-      }
-      @keyframes tml-spin { to { transform: rotate(360deg); } }
-      @media (prefers-reduced-motion: reduce) { .tml-loading::before { animation: none; } }
-    `;
-    document.head.append(panelStyle);
+    const releaseStyles = useStyles(document);
     const entries = new Map(),
       panels = new Map(),
       abort = new AbortController();
@@ -190,9 +192,6 @@
       frame.title = "Monaco — HTML";
       frame.referrerPolicy = "no-referrer";
       frame.className = "tml-frame";
-      // Keep layout measurable while the loading indicator covers the editor.
-      frame.style.cssText =
-        "display:block;visibility:hidden;width:100%;height:600px;border:0;box-sizing:border-box;background:#fff;";
       element.after(frame);
       const e = {
         element,
@@ -248,7 +247,7 @@
         e.version = await latest();
         if (!entries.has(element) || !element.isConnected) return;
         frame.srcdoc =
-          '<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>html,body,#editor{width:100%;height:100%;margin:0;overflow:hidden}body{background:#fff}</style></head><body><div id="editor"></div><script type="module">(' +
+          '<!doctype html><html class="tml-editor-document"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"></head><body><div id="editor"></div><script type="module">(' +
           frameMain.toString() +
           ")(" +
           JSON.stringify(e.version) +
@@ -319,6 +318,8 @@
         return {
           alive: () =>
             entries.has(e.element) && e.element.isConnected && !e.error,
+          addStyles: () => useStyles(e.frame.contentDocument),
+          notice: (text, error) => window.__tildaEditorTools?.notice(text, error),
           getValue: () => e.ace.getValue(),
           ready(editor, monaco) {
             if (!entries.has(e.element) || e.error) return;
@@ -382,7 +383,7 @@
         abort.abort();
         [...entries.values()].forEach(dispose);
         [...panels.keys()].forEach(forgetPanel);
-        panelStyle.remove();
+        releaseStyles();
         delete window.__tildaMonaco;
       },
     };
@@ -391,9 +392,8 @@
     const bridge = parent.__tildaMonaco?.bridge(window.frameElement);
     if (!bridge) return;
     const base = "https://esm.sh/monaco-editor@" + version,
-      workerURLs = new Set(),
-      workers = new Set(),
-      disposables = [];
+      workers = new Map(),
+      disposables = [{ dispose: bridge.addStyles() }];
     let editor,
       model,
       disposed = false,
@@ -402,10 +402,20 @@
       const url = URL.createObjectURL(
         new Blob([source], { type: "application/javascript" }),
       );
-      workerURLs.add(url);
-      const w = new Worker(url, { type: "module", name });
-      workers.add(w);
-      return w;
+      try {
+        const worker = new Worker(url, { type: "module", name });
+        workers.set(worker, url);
+        return worker;
+      } catch (error) {
+        URL.revokeObjectURL(url);
+        throw error;
+      }
+    }
+    function releaseWorker(worker) {
+      if (!workers.has(worker)) return;
+      worker.terminate();
+      URL.revokeObjectURL(workers.get(worker));
+      workers.delete(worker);
     }
     window.__tmlDispose = () => {
       if (disposed) return;
@@ -414,8 +424,7 @@
       disposables.forEach((d) => d.dispose());
       editor?.dispose();
       model?.dispose();
-      workers.forEach((w) => w.terminate());
-      workerURLs.forEach((u) => URL.revokeObjectURL(u));
+      for (const worker of workers.keys()) releaseWorker(worker);
     };
     window.addEventListener("pagehide", window.__tmlDispose, { once: true });
     window.MonacoEnvironment = {
@@ -588,7 +597,7 @@
               request.reject(new Error("Prettier worker failed"));
             }
             pending.clear();
-            prettierWorker.terminate();
+            releaseWorker(prettierWorker);
             prettierWorker = null;
           };
         }
@@ -654,6 +663,161 @@
           formatter,
         ),
       );
+
+      // Minify HTML on demand; edits share Monaco's normal undo stack.
+      (function installMinification() {
+        const busy = editor.createContextKey("tmlMinifying", false),
+          encoder = new TextEncoder();
+        let worker,
+          pending,
+          sequence = 0,
+          dead = false;
+
+        function minifierMain() {
+          let library;
+          self.onmessage = async ({ data }) => {
+            try {
+              library ||= Promise.all([
+                import("https://cdn.jsdelivr.net/npm/html-minifier-terser@7.2.0/dist/htmlminifier.esm.bundle.min.js"),
+                import("https://cdn.jsdelivr.net/npm/css-tree@3.2.1/dist/csstree.esm.js"),
+              ]);
+              const [{ minify }, cssTree] = await library;
+              const text = await minify(data.text, {
+                // HTML whitespace may be significant because of page CSS.
+                collapseWhitespace: false,
+                removeComments: true,
+                caseSensitive: true,
+                keepClosingSlash: true,
+                includeAutoGeneratedTags: false,
+                // Serialize syntax only: no rule merging, URL loading or rewriting.
+                // CSSTree preserves unrecognized syntax in Raw nodes.
+                minifyCSS(text, type) {
+                  const context = type === "inline" ? "declarationList"
+                    : type === "media" ? "mediaQueryList" : "stylesheet";
+                  // String serialization can decode a CSS escape into </style>.
+                  return cssTree.generate(cssTree.parse(text, { context }))
+                    .replace(/<(?=\/style)/gi, "\\3c ");
+                },
+                minifyJS: {
+                  compress: false,
+                  mangle: false,
+                  format: { comments: /^!|@preserve|@license|@cc_on/i },
+                },
+              });
+              self.postMessage({ id: data.id, text });
+            } catch (error) {
+              self.postMessage({ id: data.id, error: error.message || String(error) });
+            }
+          };
+        }
+
+        function stop(error) {
+          releaseWorker(worker);
+          worker = null;
+          if (!pending) return;
+          const request = pending;
+          pending = null;
+          clearTimeout(request.timer);
+          request.reject(error);
+        }
+
+        function minify(text) {
+          if (!worker) {
+            const active = worker = createWorker(
+              "(" + minifierMain.toString() + ")();",
+              "tml-minify-html",
+            );
+            active.onmessage = ({ data }) => {
+              if (worker !== active || pending?.id !== data.id) return;
+              if (data.error || typeof data.text !== "string") {
+                stop(new Error(data.error || "Минификатор вернул некорректный результат."));
+                return;
+              }
+              const request = pending;
+              pending = null;
+              clearTimeout(request.timer);
+              request.resolve(data.text);
+            };
+            active.onerror = active.onmessageerror = () => {
+              if (worker === active)
+                stop(new Error("Не удалось запустить минификатор. Попробуйте ещё раз."));
+            };
+          }
+          return new Promise((resolve, reject) => {
+            const id = ++sequence;
+            pending = {
+              id, resolve, reject,
+              timer: setTimeout(() => stop(new Error(
+                "Минификация не завершилась за 30 секунд. Попробуйте ещё раз.",
+              )), 30000),
+            };
+            try {
+              worker.postMessage({ id, text });
+            } catch (error) {
+              stop(error);
+            }
+          });
+        }
+
+        const alive = () => !dead && !disposed && bridge.alive();
+        const readonly = () => editor.getOption(monaco.editor.EditorOption.readOnly);
+        async function run() {
+          if (!alive() || busy.get() || readonly() || editor.getModel() !== model) return;
+          const input = model.getValue(),
+            revision = model.getVersionId();
+          if (!input.trim()) {
+            bridge.notice("В редакторе нет кода для минификации.");
+            return;
+          }
+          busy.set(true);
+          bridge.notice("Минифицирую HTML…");
+          try {
+            const output = await minify(input);
+            if (!alive()) return;
+            if (editor.getModel() !== model || model.getVersionId() !== revision || readonly()) {
+              bridge.notice("Редактор изменился во время обработки. Запустите минификацию ещё раз.");
+              return;
+            }
+            const before = encoder.encode(input).length,
+              after = encoder.encode(output).length;
+            if (after >= before) {
+              bridge.notice("Код уже достаточно компактный.");
+              return;
+            }
+            editor.pushUndoStop();
+            const applied = editor.executeEdits("tml.minifyHTML", [{
+              range: model.getFullModelRange(),
+              text: output,
+              forceMoveMarkers: true,
+            }], [new monaco.Selection(1, 1, 1, 1)]);
+            editor.pushUndoStop();
+            if (!applied) throw new Error("Редактор не применил изменения.");
+            editor.focus();
+            bridge.notice(
+              `Минификация: −${Math.round((1 - after / before) * 100)}% (${before} → ${after} байт).`,
+            );
+          } catch (error) {
+            if (alive()) bridge.notice("Не удалось минифицировать HTML: " + error.message, true);
+          } finally {
+            if (!dead) busy.set(false);
+          }
+        }
+        disposables.push(editor.addAction({
+          id: "tml.minifyHTML",
+          label: "Минифицировать HTML / Minify HTML",
+          precondition: "!editorReadonly && !tmlMinifying",
+          contextMenuGroupId: "1_modification",
+          contextMenuOrder: 3,
+          run,
+        }), {
+          dispose() {
+            dead = true;
+            busy.reset();
+            stop(new Error("Редактор закрыт."));
+          },
+        });
+      })();
+
       // Reuse Monaco's HTML tokenization to mirror only embedded JS and CSS.
       // Whitespace preserves UTF-16 offsets, line numbers and the original HTML.
       const jsModel = monaco.editor.createModel(
@@ -1132,31 +1296,7 @@
     // Google Material Symbols Sharp: drive_folder_upload (Apache 2.0).
     const projectPublishIcon =
       '<path d="M440-280h80v-168l64 64 56-56-160-160-160 160 56 56 64-64v168ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"/>';
-    const style = document.createElement("style");
-    style.id = "tml-editor-tools-style";
-    style.textContent = `
-      .annexx-publish,.annexx-open-link-page,.annexx-publish-tooltip,.annexx-publish-text{display:none!important}
-      #mainmenu .tp-menu__navbar{position:relative}
-      #mainmenu .tml-page-tool{position:absolute;top:0;display:flex;align-items:center;height:60px;margin:0!important;padding:0!important}
-      #mainmenu .tml-page-tool-publish{left:-53px}
-      #mainmenu .tml-page-tool-open{left:-28px}
-      #mainmenu .tml-page-tool-publish-project{left:-78px}
-      .tml-page-tool :is(button,a){display:grid;place-items:center;width:25px;height:60px;padding:0;border:0;border-radius:0;background:transparent;color:#111;cursor:pointer;text-decoration:none}
-      .tml-page-tool :is(button,a):hover{background:#0000000d}
-      .tml-page-tool button:disabled{opacity:.35;cursor:wait}
-      .tml-page-tool :is(button,a):focus{outline:none}
-      .tml-page-tool svg{display:block;width:18px;height:18px;fill:currentColor;stroke:none}
-      .pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button{display:grid;place-items:center;flex:0 0 60px;width:60px;min-width:60px;height:60px;padding:0;border:0;border-radius:0;background:#efefef;color:#111;cursor:pointer}
-      .pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:hover{background:#e5e5e5}
-      .pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:focus{outline:none}
-      .pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:disabled{opacity:.35;cursor:wait}
-      .tml-project-publish-button svg{display:block;width:20px;height:20px;fill:currentColor;stroke:none}
-      @media(max-width:960px){
-        #mainmenu .tml-page-tool{position:static;height:50px}
-        .tml-page-tool :is(button,a){height:50px;width:28px}
-      }
-    `;
-    document.head.append(style);
+    const releaseStyles = useStyles(document);
     function notice(text, error = false) {
       const safe =
         typeof window.tp__escapeHtml === "function"
@@ -1694,6 +1834,7 @@
       signal: abort.signal,
     });
     window.__tildaEditorTools = {
+      notice,
       publish,
       publishProject,
       openPage,
@@ -1713,7 +1854,7 @@
         clearTimeout(timer);
         attached.forEach((e) => e.dispose());
         attached.clear();
-        style.remove();
+        releaseStyles();
         document.querySelectorAll(".tml-page-tool,.tml-project-publish-button").forEach((e) => e.remove());
         delete window.__tildaEditorTools;
       },
@@ -1821,7 +1962,7 @@
       dialog.className = "tml-theme-picker";
       dialog.setAttribute("aria-label", "Тема редактора");
       dialog.innerHTML =
-        '<style>.tml-theme-picker{box-sizing:border-box;position:fixed;inset:18px auto auto 50%;transform:translateX(-50%);margin:0;width:min(440px,calc(100% - 32px));padding:12px;border:1px solid var(--vscode-widget-border,#8886);border-radius:8px;background:var(--vscode-editorWidget-background,#fff);color:var(--vscode-editorWidget-foreground,#333);box-shadow:0 12px 40px #0004;font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.tml-theme-picker::backdrop{background:transparent}.tml-theme-picker input{box-sizing:border-box;width:100%;padding:9px 10px;border:1px solid var(--vscode-focusBorder,#007acc);outline:0;border-radius:3px;background:var(--vscode-input-background,#fff);color:var(--vscode-input-foreground,#333);font:inherit}.tml-theme-picker .tml-theme-list{max-height:min(420px,65vh);overflow:auto;margin:8px -4px}.tml-theme-picker button{display:block;width:100%;border:0;border-radius:3px;padding:8px 10px;text-align:left;background:transparent;color:inherit;font:inherit;cursor:pointer}.tml-theme-picker button[aria-selected=true]{background:var(--vscode-list-activeSelectionBackground,#0060c0);color:var(--vscode-list-activeSelectionForeground,#fff)}.tml-theme-picker p{margin:8px 0 0;font-size:11px;opacity:.8}</style><input type="search" aria-label="Найти тему" placeholder="Найти тему…" autocomplete="off" role="combobox" aria-expanded="true" aria-controls="tml-theme-list"><div class="tml-theme-list" id="tml-theme-list" role="listbox" aria-label="Темы редактора"></div><p role="status">↑ ↓ — предпросмотр · Enter — выбрать · Esc — отмена</p>';
+        '<input type="search" aria-label="Найти тему" placeholder="Найти тему…" autocomplete="off" role="combobox" aria-expanded="true" aria-controls="tml-theme-list"><div class="tml-theme-list" id="tml-theme-list" role="listbox" aria-label="Темы редактора"></div><p role="status">↑ ↓ — предпросмотр · Enter — выбрать · Esc — отмена</p>';
       const input = dialog.querySelector("input"),
         list = dialog.querySelector(".tml-theme-list"),
         status = dialog.querySelector("[role=status]");

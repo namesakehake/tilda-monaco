@@ -68,6 +68,7 @@ function setup(config = {}) {
     window, document, location: { href: 'https://tilda.ru/page/?pageid=1&projectid=77', origin: 'https://tilda.ru' },
     MutationObserver: class { observe() {} disconnect() {} }, AbortController, URLSearchParams, URL,
     console, setTimeout, clearTimeout, getComputedStyle: () => ({ visibility: 'visible' }),
+    useStyles: () => () => {},
   });
   return { tools: window.__tildaEditorTools, window, trace, notices,
     batches: () => trace.filter((x) => x.body?.comm === 'projectpublish') };

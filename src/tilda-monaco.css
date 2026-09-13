@@ -1,0 +1,230 @@
+/* Панель HTML-редактора и индикатор загрузки. */
+#editformsxl:has(.editrecordcontent_container_code, .tml-frame) {
+    width: 80vw !important;
+    max-width: 100vw !important;
+    box-sizing: border-box;
+}
+
+@media (max-width: 1000px) {
+    #editformsxl:has(.editrecordcontent_container_code, .tml-frame) {
+        width: 100vw !important;
+    }
+}
+
+.tml-pending {
+    position: relative;
+    height: var(--tml-loading-height);
+    overflow: hidden;
+}
+
+.tml-pending .ace_editor {
+    visibility: hidden !important;
+    pointer-events: none;
+}
+
+.tml-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background: var(--tml-loading-bg, #fff);
+    color: var(--tml-loading-fg, #666);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.tml-loading::before {
+    content: "";
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    opacity: 0.6;
+    animation: tml-spin 1s linear infinite;
+}
+
+@keyframes tml-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .tml-loading::before { animation: none; }
+}
+
+/* iframe участвует в раскладке до готовности Monaco для измерения шрифта. */
+.tml-frame {
+    display: block;
+    visibility: hidden;
+    width: 100%;
+    height: 600px;
+    border: 0;
+    box-sizing: border-box;
+    background: #fff;
+}
+
+/* Эти правила действуют только внутри документа редактора. */
+html.tml-editor-document,
+html.tml-editor-document body,
+html.tml-editor-document #editor {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+}
+
+html.tml-editor-document body { background: #fff; }
+
+/* Кнопки публикации и открытия страницы. */
+.annexx-publish,
+.annexx-open-link-page,
+.annexx-publish-tooltip,
+.annexx-publish-text {
+    display: none !important;
+}
+
+#mainmenu .tp-menu__navbar { position: relative; }
+
+#mainmenu .tml-page-tool {
+    position: absolute;
+    top: 0;
+    display: flex;
+    align-items: center;
+    height: 60px;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+#mainmenu .tml-page-tool-publish { left: -53px; }
+#mainmenu .tml-page-tool-open { left: -28px; }
+#mainmenu .tml-page-tool-publish-project { left: -78px; }
+
+.tml-page-tool :is(button, a) {
+    display: grid;
+    place-items: center;
+    width: 25px;
+    height: 60px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #111;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.tml-page-tool :is(button, a):hover { background: #0000000d; }
+.tml-page-tool button:disabled { opacity: 0.35; cursor: wait; }
+.tml-page-tool :is(button, a):focus { outline: none; }
+
+.tml-page-tool svg {
+    display: block;
+    width: 18px;
+    height: 18px;
+    fill: currentColor;
+    stroke: none;
+}
+
+.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button {
+    display: grid;
+    place-items: center;
+    flex: 0 0 60px;
+    width: 60px;
+    min-width: 60px;
+    height: 60px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #efefef;
+    color: #111;
+    cursor: pointer;
+}
+
+.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:hover {
+    background: #e5e5e5;
+}
+
+.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:focus {
+    outline: none;
+}
+
+.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:disabled {
+    opacity: 0.35;
+    cursor: wait;
+}
+
+.tml-project-publish-button svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+    fill: currentColor;
+    stroke: none;
+}
+
+@media (max-width: 960px) {
+    #mainmenu .tml-page-tool { position: static; height: 50px; }
+    .tml-page-tool :is(button, a) { height: 50px; width: 28px; }
+}
+
+/* Выбор темы внутри Monaco. Цвета берутся из текущей темы редактора. */
+.tml-theme-picker {
+    box-sizing: border-box;
+    position: fixed;
+    inset: 18px auto auto 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    width: min(440px, calc(100% - 32px));
+    padding: 12px;
+    border: 1px solid var(--vscode-widget-border, #8886);
+    border-radius: 8px;
+    background: var(--vscode-editorWidget-background, #fff);
+    color: var(--vscode-editorWidget-foreground, #333);
+    box-shadow: 0 12px 40px #0004;
+    font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.tml-theme-picker::backdrop { background: transparent; }
+
+.tml-theme-picker input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--vscode-focusBorder, #007acc);
+    outline: 0;
+    border-radius: 3px;
+    background: var(--vscode-input-background, #fff);
+    color: var(--vscode-input-foreground, #333);
+    font: inherit;
+}
+
+.tml-theme-picker .tml-theme-list {
+    max-height: min(420px, 65vh);
+    overflow: auto;
+    margin: 8px -4px;
+}
+
+.tml-theme-picker button {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-radius: 3px;
+    padding: 8px 10px;
+    text-align: left;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.tml-theme-picker button[aria-selected="true"] {
+    background: var(--vscode-list-activeSelectionBackground, #0060c0);
+    color: var(--vscode-list-activeSelectionForeground, #fff);
+}
+
+.tml-theme-picker p {
+    margin: 8px 0 0;
+    font-size: 11px;
+    opacity: 0.8;
+}

@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name         Tilda — Monaco HTML + публикация
 // @namespace    local.tilda.monaco
-// @version      1.1.11
+// @version      1.1.12
+// @license      MIT
 // @description  Monaco latest, темы, Prettier, минификация, публикация и копирование ID/классов блоков.
 // @match        https://tilda.ru/page/*
 // @match        https://tilda.cc/page/*

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Tilda — Monaco HTML + публикация
 // @namespace    local.tilda.monaco
-// @version      1.1.9
-// @description  Monaco latest, темы, Prettier, минификация и публикация через штатные функции Тильды.
+// @version      1.1.10
+// @description  Monaco latest, темы, Prettier, минификация, публикация и копирование ID/классов блоков.
 // @match        https://tilda.ru/page/*
 // @match        https://tilda.cc/page/*
 // @run-at       document-end
@@ -1286,6 +1286,7 @@
     window.__tildaEditorTools?.dispose();
     const abort = new AbortController(),
       attached = new Map(),
+      recordButtons = new Map(),
       revisions = new WeakMap();
     let busy = false,
       stopped = false,
@@ -1770,9 +1771,82 @@
             "Shift + клик: сохранить и опубликовать. Alt/Option + клик: сохранить, опубликовать и открыть.";
         });
     }
+    function updateRecordButtons(record) {
+      const entry = recordButtons.get(record);
+      if (!entry) return;
+      // Use the same alias ID and saved class as Tilda's block dropdown.
+      const id = record.uiControl?.data?.aliasid || record.getAttribute("recordid");
+      const customClass = (record.getAttribute("data-custom-class") || "").trim();
+      for (const [kind, value] of [["id", id ? `#rec${id}` : ""], ["class", customClass]]) {
+        const button = entry[kind];
+        // Absent buttons leave the group, preserving Tilda's :last-child borders.
+        if (!value) button.remove();
+        else if (button.parentElement !== entry.group) entry.group.append(button);
+        button.dataset.tmlCopyValue = value;
+        const label = button.firstElementChild;
+        if (label.textContent !== value) label.textContent = value;
+        const title = `Скопировать ${kind === "id" ? "ID блока" : "класс блока"}: ${value}`;
+        button.title = title;
+        button.setAttribute("aria-label", title);
+      }
+    }
+    function scanRecordButtons() {
+      for (const [record, entry] of recordButtons) {
+        if (!record.isConnected || !entry.group.isConnected ||
+            record.uiControl?.elements?.wrapper !== entry.wrapper) {
+          entry.id.remove();
+          entry.class.remove();
+          recordButtons.delete(record);
+        }
+      }
+      for (const record of document.querySelectorAll("#allrecords > .record")) {
+        const wrapper = record.uiControl?.elements?.wrapper;
+        const groups = wrapper?.querySelectorAll(
+          ".tp-record-ui__container_top.tp-record-ui__container_right > .tp-record-ui__group_borders",
+        );
+        const group = groups?.[groups.length - 1];
+        if (!group) continue;
+        let entry = recordButtons.get(record);
+        if (!entry) {
+          entry = { wrapper, group };
+          for (const kind of ["id", "class"]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tp-record-ui__button tp-record-ui__button_white tml-record-copy";
+            button.dataset.tmlCopyKind = kind;
+            button.dataset.tmlRecordId = record.getAttribute("recordid");
+            const label = document.createElement("span");
+            label.className = "tp-record-ui__button-text";
+            button.append(label);
+            button.addEventListener("pointerdown", event => event.stopPropagation());
+            button.addEventListener("click", event => {
+              event.preventDefault();
+              event.stopPropagation();
+              updateRecordButtons(record);
+              const value = button.dataset.tmlCopyValue;
+              if (!value) return;
+              if (typeof window.tp__copyTextToClipboard !== "function") {
+                notice("Копирование Тильды недоступно. Перезагрузите страницу.", true);
+                return;
+              }
+              window.tp__copyTextToClipboard(
+                value,
+                kind === "id" ? "ID блока скопирован" : "Класс блока скопирован",
+                "Не удалось скопировать. Попробуйте ещё раз.",
+              );
+            });
+            entry[kind] = button;
+          }
+          recordButtons.set(record, entry);
+        }
+        entry.group = group;
+        updateRecordButtons(record);
+      }
+    }
     function scan() {
       if (stopped) return;
       scanButtons();
+      scanRecordButtons();
       for (const [frame, entry] of attached)
         if (!frame.isConnected) {
           entry.dispose();
@@ -1797,8 +1871,10 @@
       });
     }
     const controlsSelector =
-      '#mainmenu,#page_menu_publishlink,.tml-frame,.tml-page-tool,.pe-content__savebtns-wrapper,button[onclick*="edrec__sendForm"]';
+      '#mainmenu,#page_menu_publishlink,.tml-frame,.tml-page-tool,.pe-content__savebtns-wrapper,button[onclick*="edrec__sendForm"],#allrecords > .record,.tp-record-ui,.tp-record-ui__group';
     const observer = new MutationObserver((records) => {
+      for (const record of records)
+        if (record.type === "attributes") updateRecordButtons(record.target);
       const relevant = records.some((record) =>
         [...record.addedNodes, ...record.removedNodes].some(
           (node) =>
@@ -1811,7 +1887,8 @@
       clearTimeout(timer);
       timer = setTimeout(scan, 100);
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true,
+      attributes: true, attributeFilter: ["data-custom-class", "recordid"] });
     window.addEventListener("tml:ready", scan, { signal: abort.signal });
     window.addEventListener("keydown", keydown, {
       capture: true,
@@ -1854,6 +1931,8 @@
         clearTimeout(timer);
         attached.forEach((e) => e.dispose());
         attached.clear();
+        recordButtons.forEach((entry) => { entry.id.remove(); entry.class.remove(); });
+        recordButtons.clear();
         releaseStyles();
         document.querySelectorAll(".tml-page-tool,.tml-project-publish-button").forEach((e) => e.remove());
         delete window.__tildaEditorTools;

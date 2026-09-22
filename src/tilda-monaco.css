@@ -168,6 +168,14 @@ html.tml-editor-document body { background: #fff; }
     .tml-page-tool :is(button, a) { height: 50px; width: 28px; }
 }
 
+/* ID и CSS-класс в верхней правой группе штатной панели блока. */
+.tml-record-copy .tp-record-ui__button-text {
+    max-width: min(260px, 32vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Выбор темы внутри Monaco. Цвета берутся из текущей темы редактора. */
 .tml-theme-picker {
     box-sizing: border-box;

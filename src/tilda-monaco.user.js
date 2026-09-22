@@ -12,7 +12,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_openInTab
 // @grant        GM_getResourceText
-// @resource     tmlStyles file:///Users/golygin/Downloads/tilda-monaco/src/tilda-monaco.css
+// @resource     tmlStyles file:///FULL/PATH/TO/tilda-monaco/src/tilda-monaco.css
 // ==/UserScript==
 
 // Monaco обновляется независимо от userscript. Для GitHub собирается файл dist с автообновлением.

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Tilda — Monaco HTML + публикация
 // @namespace    local.tilda.monaco
-// @version      1.1.12
+// @version      1.1.13
 // @license      MIT
-// @description  Monaco latest, темы, Prettier, минификация, публикация и копирование ID/классов блоков.
+// @description  Monaco latest, темы, Prettier, минификация, публикация, отступы и копирование ID/классов блоков.
 // @match        https://tilda.ru/page/*
 // @match        https://tilda.cc/page/*
 // @run-at       document-end
@@ -268,7 +268,7 @@
 
 // Monaco обновляется независимо от userscript. Для GitHub собирается файл dist с автообновлением.
 (function (window) {
-  const css = "/* Панель HTML-редактора и индикатор загрузки. */\n#editformsxl:has(.editrecordcontent_container_code, .tml-frame) {\n    width: 80vw !important;\n    max-width: 100vw !important;\n    box-sizing: border-box;\n}\n\n@media (max-width: 1000px) {\n    #editformsxl:has(.editrecordcontent_container_code, .tml-frame) {\n        width: 100vw !important;\n    }\n}\n\n.tml-pending {\n    position: relative;\n    height: var(--tml-loading-height);\n    overflow: hidden;\n}\n\n.tml-pending .ace_editor {\n    visibility: hidden !important;\n    pointer-events: none;\n}\n\n.tml-loading {\n    position: absolute;\n    inset: 0;\n    z-index: 2;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    gap: 10px;\n    background: var(--tml-loading-bg, #fff);\n    color: var(--tml-loading-fg, #666);\n    font: 13px/1.5 -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;\n}\n\n.tml-loading::before {\n    content: \"\";\n    width: 14px;\n    height: 14px;\n    border: 2px solid currentColor;\n    border-right-color: transparent;\n    border-radius: 50%;\n    opacity: 0.6;\n    animation: tml-spin 1s linear infinite;\n}\n\n@keyframes tml-spin {\n    to { transform: rotate(360deg); }\n}\n\n@media (prefers-reduced-motion: reduce) {\n    .tml-loading::before { animation: none; }\n}\n\n/* iframe участвует в раскладке до готовности Monaco для измерения шрифта. */\n.tml-frame {\n    display: block;\n    visibility: hidden;\n    width: 100%;\n    height: 600px;\n    border: 0;\n    box-sizing: border-box;\n    background: #fff;\n}\n\n/* Эти правила действуют только внутри документа редактора. */\nhtml.tml-editor-document,\nhtml.tml-editor-document body,\nhtml.tml-editor-document #editor {\n    width: 100%;\n    height: 100%;\n    margin: 0;\n    overflow: hidden;\n}\n\nhtml.tml-editor-document body { background: #fff; }\n\n/* Кнопки публикации и открытия страницы. */\n.annexx-publish,\n.annexx-open-link-page,\n.annexx-publish-tooltip,\n.annexx-publish-text {\n    display: none !important;\n}\n\n#mainmenu .tp-menu__navbar { position: relative; }\n\n#mainmenu .tml-page-tool {\n    position: absolute;\n    top: 0;\n    display: flex;\n    align-items: center;\n    height: 60px;\n    margin: 0 !important;\n    padding: 0 !important;\n}\n\n#mainmenu .tml-page-tool-publish { left: -53px; }\n#mainmenu .tml-page-tool-open { left: -28px; }\n#mainmenu .tml-page-tool-publish-project { left: -78px; }\n\n.tml-page-tool :is(button, a) {\n    display: grid;\n    place-items: center;\n    width: 25px;\n    height: 60px;\n    padding: 0;\n    border: 0;\n    border-radius: 0;\n    background: transparent;\n    color: #111;\n    cursor: pointer;\n    text-decoration: none;\n}\n\n.tml-page-tool :is(button, a):hover { background: #0000000d; }\n.tml-page-tool button:disabled { opacity: 0.35; cursor: wait; }\n.tml-page-tool :is(button, a):focus { outline: none; }\n\n.tml-page-tool svg {\n    display: block;\n    width: 18px;\n    height: 18px;\n    fill: currentColor;\n    stroke: none;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button {\n    display: grid;\n    place-items: center;\n    flex: 0 0 60px;\n    width: 60px;\n    min-width: 60px;\n    height: 60px;\n    padding: 0;\n    border: 0;\n    border-radius: 0;\n    background: #efefef;\n    color: #111;\n    cursor: pointer;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:hover {\n    background: #e5e5e5;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:focus {\n    outline: none;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:disabled {\n    opacity: 0.35;\n    cursor: wait;\n}\n\n.tml-project-publish-button svg {\n    display: block;\n    width: 20px;\n    height: 20px;\n    fill: currentColor;\n    stroke: none;\n}\n\n@media (max-width: 960px) {\n    #mainmenu .tml-page-tool { position: static; height: 50px; }\n    .tml-page-tool :is(button, a) { height: 50px; width: 28px; }\n}\n\n/* ID и CSS-класс в верхней правой группе штатной панели блока. */\n.tml-record-copy .tp-record-ui__button-text {\n    max-width: min(260px, 32vw);\n    overflow: hidden;\n    text-overflow: ellipsis;\n    white-space: nowrap;\n}\n\n/* Выбор темы внутри Monaco. Цвета берутся из текущей темы редактора. */\n.tml-theme-picker {\n    box-sizing: border-box;\n    position: fixed;\n    inset: 18px auto auto 50%;\n    transform: translateX(-50%);\n    margin: 0;\n    width: min(440px, calc(100% - 32px));\n    padding: 12px;\n    border: 1px solid var(--vscode-widget-border, #8886);\n    border-radius: 8px;\n    background: var(--vscode-editorWidget-background, #fff);\n    color: var(--vscode-editorWidget-foreground, #333);\n    box-shadow: 0 12px 40px #0004;\n    font: 13px/1.45 -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;\n}\n\n.tml-theme-picker::backdrop { background: transparent; }\n\n.tml-theme-picker input {\n    box-sizing: border-box;\n    width: 100%;\n    padding: 9px 10px;\n    border: 1px solid var(--vscode-focusBorder, #007acc);\n    outline: 0;\n    border-radius: 3px;\n    background: var(--vscode-input-background, #fff);\n    color: var(--vscode-input-foreground, #333);\n    font: inherit;\n}\n\n.tml-theme-picker .tml-theme-list {\n    max-height: min(420px, 65vh);\n    overflow: auto;\n    margin: 8px -4px;\n}\n\n.tml-theme-picker button {\n    display: block;\n    width: 100%;\n    border: 0;\n    border-radius: 3px;\n    padding: 8px 10px;\n    text-align: left;\n    background: transparent;\n    color: inherit;\n    font: inherit;\n    cursor: pointer;\n}\n\n.tml-theme-picker button[aria-selected=\"true\"] {\n    background: var(--vscode-list-activeSelectionBackground, #0060c0);\n    color: var(--vscode-list-activeSelectionForeground, #fff);\n}\n\n.tml-theme-picker p {\n    margin: 8px 0 0;\n    font-size: 11px;\n    opacity: 0.8;\n}\n",
+  const css = "/* Панель HTML-редактора и индикатор загрузки. */\n#editformsxl:has(.editrecordcontent_container_code, .tml-frame) {\n    width: 80vw !important;\n    max-width: 100vw !important;\n    box-sizing: border-box;\n}\n\n@media (max-width: 1000px) {\n    #editformsxl:has(.editrecordcontent_container_code, .tml-frame) {\n        width: 100vw !important;\n    }\n}\n\n.tml-pending {\n    position: relative;\n    height: var(--tml-loading-height);\n    overflow: hidden;\n}\n\n.tml-pending .ace_editor {\n    visibility: hidden !important;\n    pointer-events: none;\n}\n\n.tml-loading {\n    position: absolute;\n    inset: 0;\n    z-index: 2;\n    display: flex;\n    align-items: center;\n    justify-content: center;\n    gap: 10px;\n    background: var(--tml-loading-bg, #fff);\n    color: var(--tml-loading-fg, #666);\n    font: 13px/1.5 -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;\n}\n\n.tml-loading::before {\n    content: \"\";\n    width: 14px;\n    height: 14px;\n    border: 2px solid currentColor;\n    border-right-color: transparent;\n    border-radius: 50%;\n    opacity: 0.6;\n    animation: tml-spin 1s linear infinite;\n}\n\n@keyframes tml-spin {\n    to { transform: rotate(360deg); }\n}\n\n@media (prefers-reduced-motion: reduce) {\n    .tml-loading::before { animation: none; }\n}\n\n/* iframe участвует в раскладке до готовности Monaco для измерения шрифта. */\n.tml-frame {\n    display: block;\n    visibility: hidden;\n    width: 100%;\n    height: 600px;\n    border: 0;\n    box-sizing: border-box;\n    background: #fff;\n}\n\n/* Эти правила действуют только внутри документа редактора. */\nhtml.tml-editor-document,\nhtml.tml-editor-document body,\nhtml.tml-editor-document #editor {\n    width: 100%;\n    height: 100%;\n    margin: 0;\n    overflow: hidden;\n}\n\nhtml.tml-editor-document body { background: #fff; }\n\n/* Кнопки публикации и открытия страницы. */\n.annexx-publish,\n.annexx-open-link-page,\n.annexx-publish-tooltip,\n.annexx-publish-text {\n    display: none !important;\n}\n\n#mainmenu .tp-menu__navbar { position: relative; }\n\n#mainmenu .tml-page-tool {\n    position: absolute;\n    top: 0;\n    display: flex;\n    align-items: center;\n    height: 60px;\n    margin: 0 !important;\n    padding: 0 !important;\n}\n\n#mainmenu .tml-page-tool-publish { left: -53px; }\n#mainmenu .tml-page-tool-open { left: -28px; }\n#mainmenu .tml-page-tool-publish-project { left: -78px; }\n\n.tml-page-tool :is(button, a) {\n    display: grid;\n    place-items: center;\n    width: 25px;\n    height: 60px;\n    padding: 0;\n    border: 0;\n    border-radius: 0;\n    background: transparent;\n    color: #111;\n    cursor: pointer;\n    text-decoration: none;\n}\n\n.tml-page-tool :is(button, a):hover { background: #0000000d; }\n.tml-page-tool button:disabled { opacity: 0.35; cursor: wait; }\n.tml-page-tool :is(button, a):focus { outline: none; }\n\n.tml-page-tool svg {\n    display: block;\n    width: 18px;\n    height: 18px;\n    fill: currentColor;\n    stroke: none;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button {\n    display: grid;\n    place-items: center;\n    flex: 0 0 60px;\n    width: 60px;\n    min-width: 60px;\n    height: 60px;\n    padding: 0;\n    border: 0;\n    border-radius: 0;\n    background: #efefef;\n    color: #111;\n    cursor: pointer;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:hover {\n    background: #e5e5e5;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:focus {\n    outline: none;\n}\n\n.pe-content__savebtns-wrapper button.tbtn.tml-project-publish-button:disabled {\n    opacity: 0.35;\n    cursor: wait;\n}\n\n.tml-project-publish-button svg {\n    display: block;\n    width: 20px;\n    height: 20px;\n    fill: currentColor;\n    stroke: none;\n}\n\n@media (max-width: 960px) {\n    #mainmenu .tml-page-tool { position: static; height: 50px; }\n    .tml-page-tool :is(button, a) { height: 50px; width: 28px; }\n}\n\n/* ID и CSS-класс в верхней правой группе штатной панели блока. */\n.tml-record-copy .tp-record-ui__button-text {\n    max-width: min(260px, 32vw);\n    overflow: hidden;\n    text-overflow: ellipsis;\n    white-space: nowrap;\n}\n\n/* Ручное подключение мобильных отступов рядом со штатными полями блока. */\n.pe-settings-form .tml-padding-help {\n    display: flex;\n    flex-wrap: wrap;\n    gap: 8px 16px;\n    margin: 0 0 30px;\n    font-family: inherit;\n    color: #555;\n}\n\n.tml-padding-help__status {\n    flex-basis: 100%;\n    margin: 0;\n    font-size: 14px;\n    font-weight: 300;\n    line-height: 18px;\n}\n\n.tml-padding-help :where(button) {\n    display: block;\n    width: fit-content;\n    max-width: 100%;\n    box-sizing: border-box;\n    padding: 0;\n    border: 0;\n    border-radius: 0;\n    background: none;\n    color: inherit;\n    font: inherit;\n    font-size: 14px;\n    font-weight: 300;\n    line-height: 18px;\n    text-align: left;\n    text-decoration: underline dashed;\n    text-decoration-thickness: 1px;\n    text-underline-offset: 3px;\n    cursor: pointer;\n}\n\n/* Как t-colwidget__link-eye: пунктирная ссылка и акцент при наведении.\n   Свой класс и значок перехода не связывают действие с направляющими Тильды. */\n.tml-padding-help__action::before {\n    content: \"\";\n    display: inline-block;\n    width: 1em;\n    height: 1em;\n    margin-right: 4px;\n    vertical-align: -.15em;\n    background: currentColor;\n    mask: url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 14'%3E%3Cpath d='M8.5 2.5h3v3m0-3-6 6M6 3H3v8h8V8' fill='none' stroke='black' stroke-width='.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\") center / contain no-repeat;\n}\n\n.tml-padding-help button:hover:not(:disabled) { color: #fa633f; }\n.tml-padding-help button:disabled { opacity: .35; cursor: wait; }\n.tml-padding-help button:focus-visible { outline: 2px solid #fa633f; outline-offset: 3px; }\n\n/* Выбор темы внутри Monaco. Цвета берутся из текущей темы редактора. */\n.tml-theme-picker {\n    box-sizing: border-box;\n    position: fixed;\n    inset: 18px auto auto 50%;\n    transform: translateX(-50%);\n    margin: 0;\n    width: min(440px, calc(100% - 32px));\n    padding: 12px;\n    border: 1px solid var(--vscode-widget-border, #8886);\n    border-radius: 8px;\n    background: var(--vscode-editorWidget-background, #fff);\n    color: var(--vscode-editorWidget-foreground, #333);\n    box-shadow: 0 12px 40px #0004;\n    font: 13px/1.45 -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif;\n}\n\n.tml-theme-picker::backdrop { background: transparent; }\n\n.tml-theme-picker input {\n    box-sizing: border-box;\n    width: 100%;\n    padding: 9px 10px;\n    border: 1px solid var(--vscode-focusBorder, #007acc);\n    outline: 0;\n    border-radius: 3px;\n    background: var(--vscode-input-background, #fff);\n    color: var(--vscode-input-foreground, #333);\n    font: inherit;\n}\n\n.tml-theme-picker .tml-theme-list {\n    max-height: min(420px, 65vh);\n    overflow: auto;\n    margin: 8px -4px;\n}\n\n.tml-theme-picker button {\n    display: block;\n    width: 100%;\n    border: 0;\n    border-radius: 3px;\n    padding: 8px 10px;\n    text-align: left;\n    background: transparent;\n    color: inherit;\n    font: inherit;\n    cursor: pointer;\n}\n\n.tml-theme-picker button[aria-selected=\"true\"] {\n    background: var(--vscode-list-activeSelectionBackground, #0060c0);\n    color: var(--vscode-list-activeSelectionForeground, #fff);\n}\n\n.tml-theme-picker p {\n    margin: 8px 0 0;\n    font-size: 11px;\n    opacity: 0.8;\n}\n",
     styledDocuments = new WeakMap();
 
   // Share one stylesheet per document; remove it when its last consumer stops.
@@ -1544,12 +1544,241 @@
       timer,
       latestLink,
       projectController,
+      paddingFieldsHook,
+      paddingValidationHook,
+      paddingPanel,
+      paddingHeadCheck,
+      paddingHeadNeedsRefresh = false,
+      paddingPreviewStyle,
       projectProgress = "";
     // Google Material Symbols Sharp: drive_folder_upload (Apache 2.0).
     const projectPublishIcon =
       '<path d="M440-280h80v-168l64 64 56-56-160-160-160 160 56 56 64-64v168ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"/>';
     const releaseStyles = useStyles(document);
-    function notice(text, error = false) {
+    // Also serialized into site HEAD: published pages do not run the userscript.
+    function renderMobilePadding(doc, styleId = "tml-mobile-padding") {
+      const rules = new Set();
+      doc.querySelectorAll(".t-rec[class]").forEach((record) => {
+        for (const name of record.classList) {
+          const match = /^t-rec_p([tb])-res-480_(\d+(?:\.\d+)?)$/.exec(name);
+          const value = match ? Number(match[2]) : NaN;
+          if (Number.isFinite(value) && (value > 210 || value % 15 !== 0))
+            rules.add(`[class~="${name}"]{padding-${match[1] === "t" ? "top" : "bottom"}:${match[2]}px!important;}`);
+        }
+      });
+      let style = doc.querySelector("#" + styleId);
+      if (!rules.size && !style) return null;
+      if (!style) {
+        style = doc.createElement("style");
+        style.id = styleId;
+        doc.head.append(style);
+      }
+      const text = rules.size ? `@media screen and (max-width:480px){${[...rules].join("")}}` : "";
+      if (style.textContent !== text) style.textContent = text;
+      return style;
+    }
+    const mobilePaddingMarker = '<script id="tml-mobile-padding-runtime-v1">';
+    function mobilePaddingCode() {
+      return `<!-- Tilda Monaco: мобильные отступы для экранов до 480 px -->
+${mobilePaddingMarker}
+(() => {
+  const run = () => (${renderMobilePadding.toString()})(document);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run, { once: true });
+  } else {
+    run();
+  }
+})();
+</script>`;
+    }
+    function renderPaddingHelp() {
+      const entry = paddingPanel;
+      if (!entry) return;
+      const state = paddingHeadCheck?.projectid === entry.projectid
+        ? paddingHeadCheck.state : "checking";
+      const text = {
+        checking: "Проверяем код мобильных отступов…",
+        installed: "Код мобильных отступов уже есть в HEAD сайта.",
+        missing: "Для произвольных мобильных отступов нужен код в HEAD сайта.",
+        error: "Не удалось проверить HEAD. Проверьте наличие кода вручную.",
+      }[state];
+      if (entry.status.textContent !== text) entry.status.textContent = text;
+      const label = entry.copying ? "Копируем код…" : state === "installed"
+        ? "Открыть HEAD сайта" : "Скопировать код и открыть HEAD";
+      if (entry.action.textContent !== label) entry.action.textContent = label;
+      entry.action.disabled = entry.copying || state === "checking";
+      entry.recheck.disabled = entry.copying || state === "checking";
+    }
+    function checkPaddingHead(force = false) {
+      const projectid = paddingPanel?.projectid;
+      if (stopped || !projectid) return;
+      if (paddingHeadCheck?.projectid === projectid &&
+          (!force || paddingHeadCheck.state === "checking")) {
+        renderPaddingHelp();
+        return paddingHeadCheck.promise;
+      }
+      paddingHeadCheck?.controller.abort();
+      const check = { projectid, state: "checking", controller: new AbortController() };
+      paddingHeadCheck = check;
+      renderPaddingHelp();
+      check.promise = (async () => {
+        try {
+          if (!/^\d+$/.test(projectid) || typeof window.tp__fetch !== "function")
+            throw new Error("HEAD недоступен");
+          // Read only. Never intercept block saving or write to the site's HEAD.
+          const data = await window.tp__fetch({
+            url: "/projects/get/getheadcode/",
+            body: { comm: "getheadcode", projectid },
+            responseType: "json", silent: true, controller: check.controller, timeout: 15,
+          });
+          if (stopped || paddingHeadCheck !== check || check.controller.signal.aborted) return;
+          if (String(data?.project?.id) !== projectid || typeof data.project.headcode !== "string")
+            throw new Error("Некорректный ответ HEAD");
+          const textarea = document.createElement("textarea");
+          const head = data.project.headcode.replace(/&(?:#\d+|#x[\da-f]+|[a-z][\da-z]+);/gi, (entity) => {
+            textarea.innerHTML = entity;
+            return textarea.textContent;
+          });
+          // Template contents stay inert; an ID mentioned in a comment is not an installed script.
+          const template = document.createElement("template");
+          template.innerHTML = head;
+          check.state = template.content.querySelector("script#tml-mobile-padding-runtime-v1")
+            ? "installed" : "missing";
+        } catch {
+          if (!stopped && paddingHeadCheck === check && !check.controller.signal.aborted)
+            check.state = "error";
+        } finally {
+          if (!stopped && paddingHeadCheck === check) renderPaddingHelp();
+        }
+      })();
+      return check.promise;
+    }
+    function refreshPaddingHeadOnReturn() {
+      if (stopped || !paddingHeadNeedsRefresh || !paddingPanel?.root.isConnected ||
+          document.visibilityState === "hidden") return;
+      // The user may switch back before saving HEAD, then finish it on a later visit.
+      checkPaddingHead(true);
+    }
+    async function openPaddingHead(entry) {
+      if (stopped || entry !== paddingPanel || entry.copying || entry.action.disabled ||
+          !entry.root.isConnected || !/^\d+$/.test(entry.projectid)) return;
+      const installed = paddingHeadCheck?.projectid === entry.projectid &&
+        paddingHeadCheck.state === "installed";
+      const url = `${location.origin}/projects/editheadcode/?projectid=${entry.projectid}`;
+      entry.copying = true;
+      renderPaddingHelp();
+      let copied = false;
+      try {
+        if (!installed) {
+          if (typeof window.navigator?.clipboard?.writeText !== "function")
+            throw new Error("Буфер обмена недоступен. Разрешите копирование в браузере и повторите.");
+          try {
+            await window.navigator.clipboard.writeText(mobilePaddingCode());
+          } catch {
+            throw new Error("Не удалось скопировать код. Разрешите копирование в браузере и повторите.");
+          }
+          copied = true;
+        }
+        if (stopped || entry !== paddingPanel || !entry.root.isConnected) return;
+        paddingHeadNeedsRefresh = true;
+        try {
+          openTab(url);
+        } catch {
+          paddingHeadNeedsRefresh = false;
+          throw new Error(copied
+            ? "Код скопирован. Откройте Настройки сайта → Вставка кода → HEAD и вставьте его в конец."
+            : "Не удалось открыть HEAD. Откройте Настройки сайта → Вставка кода.");
+        }
+        if (copied) notice(
+          "Код скопирован. Вставьте его в конец HEAD сайта, сохраните и перепубликуйте нужные страницы.",
+          false, 12000,
+        );
+      } catch (error) {
+        if (!stopped) notice(error.message, true);
+      } finally {
+        entry.copying = false;
+        if (!stopped) renderPaddingHelp();
+      }
+    }
+    function scanPaddingHelp() {
+      const form = document.querySelector(".pe-settings-form");
+      const row = form?.querySelector('[name="marginbottom_res_480"]')?.closest(".pe-form-group_split");
+      const projectid = String(window.projectid || "");
+      if (paddingPanel && (paddingPanel.form !== form || paddingPanel.projectid !== projectid ||
+          !row || !paddingPanel.root.isConnected)) {
+        paddingPanel.root.remove();
+        paddingPanel = undefined;
+      }
+      if (!row || !/^\d+$/.test(projectid) || paddingPanel) return;
+      const root = document.createElement("div"), status = document.createElement("p"),
+        action = document.createElement("button"), recheck = document.createElement("button");
+      root.className = "tml-padding-help";
+      status.className = "tml-padding-help__status";
+      status.setAttribute("role", "status");
+      action.type = recheck.type = "button";
+      action.className = "tml-padding-help__action";
+      recheck.className = "tml-padding-help__recheck";
+      recheck.textContent = "Проверить";
+      recheck.setAttribute("aria-label", "Проверить наличие кода в HEAD сайта");
+      root.append(status, action, recheck);
+      row.after(root);
+      const entry = { form, root, status, action, recheck, projectid, copying: false };
+      paddingPanel = entry;
+      action.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        openPaddingHead(entry);
+      }, { signal: abort.signal });
+      recheck.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        checkPaddingHead(true);
+      }, { signal: abort.signal });
+      const refresh = paddingHeadNeedsRefresh;
+      paddingHeadNeedsRefresh = false;
+      checkPaddingHead(refresh);
+    }
+    function installPaddingFields() {
+      const validate = window.edrec__validation__getFunction;
+      if (!stopped && !paddingValidationHook && typeof validate === "function") {
+        function wrapped(input, options) {
+          if (stopped || options?.uiType !== "in_int" ||
+              !/^margin(top|bottom)(_res_480)?$/.test(input?.name || ""))
+            return validate.apply(this, arguments);
+          const integer = validate.call(this, input, { ...options, doNotModifyValue: true });
+          return () => {
+            const value = integer(), result = value === "" ? "" : value + "px";
+            if (!options.doNotModifyValue) input.value = result;
+            return result;
+          };
+        }
+        paddingValidationHook = { original: validate, wrapped };
+        window.edrec__validation__getFunction = wrapped;
+      }
+      const original = window.edrec__drawUI__getFieldObj;
+      if (stopped || paddingFieldsHook || !paddingValidationHook || typeof original !== "function") return;
+      const fields = new Set([
+        "margintop", "marginbottom", "margintop_res_480", "marginbottom_res_480",
+      ]);
+      function wrapped(field) {
+        const ui = original.apply(this, arguments);
+        if (stopped || !fields.has(field) || ui?.type !== "sb" || !Array.isArray(ui.options))
+          return ui;
+        // Let Tilda render, validate and save the inputs, including saved custom
+        // values and the native desktop/mobile toggle and split layout.
+        return {
+          ...ui,
+          // Published mobile class names are integers even if saved with decimals.
+          type: "in_int",
+          range: "0,",
+          ph: ui.options.find((option) => option.v === "") || { RU: "Не задан", EN: "None" },
+          variants: ui.options.map((option) => option.v).filter(Boolean),
+        };
+      }
+      paddingFieldsHook = { original, wrapped };
+      window.edrec__drawUI__getFieldObj = wrapped;
+    }
+    function notice(text, error = false, duration = error ? 8000 : 3500) {
       const safe =
         typeof window.tp__escapeHtml === "function"
           ? window.tp__escapeHtml(text)
@@ -1557,7 +1786,7 @@
       if (typeof window.td__showBubbleNotice === "function")
         window.td__showBubbleNotice(
           safe,
-          error ? 8000 : 3500,
+          duration,
           error ? "error" : "",
         );
       else console[error ? "warn" : "info"]("[Tilda Tools] " + text);
@@ -1696,7 +1925,7 @@
     }
     function openTab(url) {
       if (typeof GM_openInTab !== "function")
-        throw new Error("Для открытия после публикации обновите скрипт в Tampermonkey.");
+        throw new Error("Для открытия новой вкладки обновите скрипт в Tampermonkey.");
       // The extension opens a tab after async publication; no blank popup or DOM access.
       return GM_openInTab(validURL(url).href, { active: true, setParent: true });
     }
@@ -2096,6 +2325,9 @@
     }
     function scan() {
       if (stopped) return;
+      installPaddingFields();
+      scanPaddingHelp();
+      paddingPreviewStyle = renderMobilePadding(document, "tml-mobile-padding-preview");
       scanButtons();
       scanRecordButtons();
       for (const [frame, entry] of attached)
@@ -2122,7 +2354,7 @@
       });
     }
     const controlsSelector =
-      '#mainmenu,#page_menu_publishlink,.tml-frame,.tml-page-tool,.pe-content__savebtns-wrapper,button[onclick*="edrec__sendForm"],#allrecords > .record,.tp-record-ui,.tp-record-ui__group';
+      '#mainmenu,#page_menu_publishlink,.tml-frame,.tml-page-tool,.pe-content__savebtns-wrapper,button[onclick*="edrec__sendForm"],#allrecords > .record,.tp-record-ui,.tp-record-ui__group,.t-rec,.pe-settings-form';
     const observer = new MutationObserver((records) => {
       for (const record of records)
         if (record.type === "attributes") updateRecordButtons(record.target);
@@ -2141,6 +2373,12 @@
     observer.observe(document.body, { childList: true, subtree: true,
       attributes: true, attributeFilter: ["data-custom-class", "recordid"] });
     window.addEventListener("tml:ready", scan, { signal: abort.signal });
+    // This event precedes field rendering, even when Tilda loads after us.
+    window.addEventListener("edrec:record-panel-open", installPaddingFields, {
+      signal: abort.signal,
+    });
+    window.addEventListener("focus", refreshPaddingHeadOnReturn, { signal: abort.signal });
+    document.addEventListener("visibilitychange", refreshPaddingHeadOnReturn, { signal: abort.signal });
     window.addEventListener("keydown", keydown, {
       capture: true,
       signal: abort.signal,
@@ -2177,9 +2415,16 @@
       dispose() {
         stopped = true;
         projectController?.abort();
+        paddingHeadCheck?.controller.abort();
+        paddingPanel?.root.remove();
         abort.abort();
         observer.disconnect();
         clearTimeout(timer);
+        if (paddingFieldsHook && window.edrec__drawUI__getFieldObj === paddingFieldsHook.wrapped)
+          window.edrec__drawUI__getFieldObj = paddingFieldsHook.original;
+        if (paddingValidationHook && window.edrec__validation__getFunction === paddingValidationHook.wrapped)
+          window.edrec__validation__getFunction = paddingValidationHook.original;
+        paddingPreviewStyle?.remove();
         attached.forEach((e) => e.dispose());
         attached.clear();
         recordButtons.forEach((entry) => { entry.id.remove(); entry.class.remove(); });

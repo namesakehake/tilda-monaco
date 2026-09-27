@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Tilda — Monaco HTML + публикация
 // @namespace    local.tilda.monaco
-// @version      1.1.12
+// @version      1.1.13
 // @license      MIT
-// @description  Monaco latest, темы, Prettier, минификация, публикация и копирование ID/классов блоков.
+// @description  Monaco latest, темы, Prettier, минификация, публикация, отступы и копирование ID/классов блоков.
 // @match        https://tilda.ru/page/*
 // @match        https://tilda.cc/page/*
 // @run-at       document-end
@@ -1294,12 +1294,241 @@
       timer,
       latestLink,
       projectController,
+      paddingFieldsHook,
+      paddingValidationHook,
+      paddingPanel,
+      paddingHeadCheck,
+      paddingHeadNeedsRefresh = false,
+      paddingPreviewStyle,
       projectProgress = "";
     // Google Material Symbols Sharp: drive_folder_upload (Apache 2.0).
     const projectPublishIcon =
       '<path d="M440-280h80v-168l64 64 56-56-160-160-160 160 56 56 64-64v168ZM160-160q-33 0-56.5-23.5T80-240v-480q0-33 23.5-56.5T160-800h240l80 80h320q33 0 56.5 23.5T880-640v400q0 33-23.5 56.5T800-160H160Zm0-80h640v-400H447l-80-80H160v480Zm0 0v-480 480Z"/>';
     const releaseStyles = useStyles(document);
-    function notice(text, error = false) {
+    // Also serialized into site HEAD: published pages do not run the userscript.
+    function renderMobilePadding(doc, styleId = "tml-mobile-padding") {
+      const rules = new Set();
+      doc.querySelectorAll(".t-rec[class]").forEach((record) => {
+        for (const name of record.classList) {
+          const match = /^t-rec_p([tb])-res-480_(\d+(?:\.\d+)?)$/.exec(name);
+          const value = match ? Number(match[2]) : NaN;
+          if (Number.isFinite(value) && (value > 210 || value % 15 !== 0))
+            rules.add(`[class~="${name}"]{padding-${match[1] === "t" ? "top" : "bottom"}:${match[2]}px!important;}`);
+        }
+      });
+      let style = doc.querySelector("#" + styleId);
+      if (!rules.size && !style) return null;
+      if (!style) {
+        style = doc.createElement("style");
+        style.id = styleId;
+        doc.head.append(style);
+      }
+      const text = rules.size ? `@media screen and (max-width:480px){${[...rules].join("")}}` : "";
+      if (style.textContent !== text) style.textContent = text;
+      return style;
+    }
+    const mobilePaddingMarker = '<script id="tml-mobile-padding-runtime-v1">';
+    function mobilePaddingCode() {
+      return `<!-- Tilda Monaco: мобильные отступы для экранов до 480 px -->
+${mobilePaddingMarker}
+(() => {
+  const run = () => (${renderMobilePadding.toString()})(document);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run, { once: true });
+  } else {
+    run();
+  }
+})();
+</script>`;
+    }
+    function renderPaddingHelp() {
+      const entry = paddingPanel;
+      if (!entry) return;
+      const state = paddingHeadCheck?.projectid === entry.projectid
+        ? paddingHeadCheck.state : "checking";
+      const text = {
+        checking: "Проверяем код мобильных отступов…",
+        installed: "Код мобильных отступов уже есть в HEAD сайта.",
+        missing: "Для произвольных мобильных отступов нужен код в HEAD сайта.",
+        error: "Не удалось проверить HEAD. Проверьте наличие кода вручную.",
+      }[state];
+      if (entry.status.textContent !== text) entry.status.textContent = text;
+      const label = entry.copying ? "Копируем код…" : state === "installed"
+        ? "Открыть HEAD сайта" : "Скопировать код и открыть HEAD";
+      if (entry.action.textContent !== label) entry.action.textContent = label;
+      entry.action.disabled = entry.copying || state === "checking";
+      entry.recheck.disabled = entry.copying || state === "checking";
+    }
+    function checkPaddingHead(force = false) {
+      const projectid = paddingPanel?.projectid;
+      if (stopped || !projectid) return;
+      if (paddingHeadCheck?.projectid === projectid &&
+          (!force || paddingHeadCheck.state === "checking")) {
+        renderPaddingHelp();
+        return paddingHeadCheck.promise;
+      }
+      paddingHeadCheck?.controller.abort();
+      const check = { projectid, state: "checking", controller: new AbortController() };
+      paddingHeadCheck = check;
+      renderPaddingHelp();
+      check.promise = (async () => {
+        try {
+          if (!/^\d+$/.test(projectid) || typeof window.tp__fetch !== "function")
+            throw new Error("HEAD недоступен");
+          // Read only. Never intercept block saving or write to the site's HEAD.
+          const data = await window.tp__fetch({
+            url: "/projects/get/getheadcode/",
+            body: { comm: "getheadcode", projectid },
+            responseType: "json", silent: true, controller: check.controller, timeout: 15,
+          });
+          if (stopped || paddingHeadCheck !== check || check.controller.signal.aborted) return;
+          if (String(data?.project?.id) !== projectid || typeof data.project.headcode !== "string")
+            throw new Error("Некорректный ответ HEAD");
+          const textarea = document.createElement("textarea");
+          const head = data.project.headcode.replace(/&(?:#\d+|#x[\da-f]+|[a-z][\da-z]+);/gi, (entity) => {
+            textarea.innerHTML = entity;
+            return textarea.textContent;
+          });
+          // Template contents stay inert; an ID mentioned in a comment is not an installed script.
+          const template = document.createElement("template");
+          template.innerHTML = head;
+          check.state = template.content.querySelector("script#tml-mobile-padding-runtime-v1")
+            ? "installed" : "missing";
+        } catch {
+          if (!stopped && paddingHeadCheck === check && !check.controller.signal.aborted)
+            check.state = "error";
+        } finally {
+          if (!stopped && paddingHeadCheck === check) renderPaddingHelp();
+        }
+      })();
+      return check.promise;
+    }
+    function refreshPaddingHeadOnReturn() {
+      if (stopped || !paddingHeadNeedsRefresh || !paddingPanel?.root.isConnected ||
+          document.visibilityState === "hidden") return;
+      // The user may switch back before saving HEAD, then finish it on a later visit.
+      checkPaddingHead(true);
+    }
+    async function openPaddingHead(entry) {
+      if (stopped || entry !== paddingPanel || entry.copying || entry.action.disabled ||
+          !entry.root.isConnected || !/^\d+$/.test(entry.projectid)) return;
+      const installed = paddingHeadCheck?.projectid === entry.projectid &&
+        paddingHeadCheck.state === "installed";
+      const url = `${location.origin}/projects/editheadcode/?projectid=${entry.projectid}`;
+      entry.copying = true;
+      renderPaddingHelp();
+      let copied = false;
+      try {
+        if (!installed) {
+          if (typeof window.navigator?.clipboard?.writeText !== "function")
+            throw new Error("Буфер обмена недоступен. Разрешите копирование в браузере и повторите.");
+          try {
+            await window.navigator.clipboard.writeText(mobilePaddingCode());
+          } catch {
+            throw new Error("Не удалось скопировать код. Разрешите копирование в браузере и повторите.");
+          }
+          copied = true;
+        }
+        if (stopped || entry !== paddingPanel || !entry.root.isConnected) return;
+        paddingHeadNeedsRefresh = true;
+        try {
+          openTab(url);
+        } catch {
+          paddingHeadNeedsRefresh = false;
+          throw new Error(copied
+            ? "Код скопирован. Откройте Настройки сайта → Вставка кода → HEAD и вставьте его в конец."
+            : "Не удалось открыть HEAD. Откройте Настройки сайта → Вставка кода.");
+        }
+        if (copied) notice(
+          "Код скопирован. Вставьте его в конец HEAD сайта, сохраните и перепубликуйте нужные страницы.",
+          false, 12000,
+        );
+      } catch (error) {
+        if (!stopped) notice(error.message, true);
+      } finally {
+        entry.copying = false;
+        if (!stopped) renderPaddingHelp();
+      }
+    }
+    function scanPaddingHelp() {
+      const form = document.querySelector(".pe-settings-form");
+      const row = form?.querySelector('[name="marginbottom_res_480"]')?.closest(".pe-form-group_split");
+      const projectid = String(window.projectid || "");
+      if (paddingPanel && (paddingPanel.form !== form || paddingPanel.projectid !== projectid ||
+          !row || !paddingPanel.root.isConnected)) {
+        paddingPanel.root.remove();
+        paddingPanel = undefined;
+      }
+      if (!row || !/^\d+$/.test(projectid) || paddingPanel) return;
+      const root = document.createElement("div"), status = document.createElement("p"),
+        action = document.createElement("button"), recheck = document.createElement("button");
+      root.className = "tml-padding-help";
+      status.className = "tml-padding-help__status";
+      status.setAttribute("role", "status");
+      action.type = recheck.type = "button";
+      action.className = "tml-padding-help__action";
+      recheck.className = "tml-padding-help__recheck";
+      recheck.textContent = "Проверить";
+      recheck.setAttribute("aria-label", "Проверить наличие кода в HEAD сайта");
+      root.append(status, action, recheck);
+      row.after(root);
+      const entry = { form, root, status, action, recheck, projectid, copying: false };
+      paddingPanel = entry;
+      action.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        openPaddingHead(entry);
+      }, { signal: abort.signal });
+      recheck.addEventListener("click", event => {
+        event.preventDefault();
+        event.stopPropagation();
+        checkPaddingHead(true);
+      }, { signal: abort.signal });
+      const refresh = paddingHeadNeedsRefresh;
+      paddingHeadNeedsRefresh = false;
+      checkPaddingHead(refresh);
+    }
+    function installPaddingFields() {
+      const validate = window.edrec__validation__getFunction;
+      if (!stopped && !paddingValidationHook && typeof validate === "function") {
+        function wrapped(input, options) {
+          if (stopped || options?.uiType !== "in_int" ||
+              !/^margin(top|bottom)(_res_480)?$/.test(input?.name || ""))
+            return validate.apply(this, arguments);
+          const integer = validate.call(this, input, { ...options, doNotModifyValue: true });
+          return () => {
+            const value = integer(), result = value === "" ? "" : value + "px";
+            if (!options.doNotModifyValue) input.value = result;
+            return result;
+          };
+        }
+        paddingValidationHook = { original: validate, wrapped };
+        window.edrec__validation__getFunction = wrapped;
+      }
+      const original = window.edrec__drawUI__getFieldObj;
+      if (stopped || paddingFieldsHook || !paddingValidationHook || typeof original !== "function") return;
+      const fields = new Set([
+        "margintop", "marginbottom", "margintop_res_480", "marginbottom_res_480",
+      ]);
+      function wrapped(field) {
+        const ui = original.apply(this, arguments);
+        if (stopped || !fields.has(field) || ui?.type !== "sb" || !Array.isArray(ui.options))
+          return ui;
+        // Let Tilda render, validate and save the inputs, including saved custom
+        // values and the native desktop/mobile toggle and split layout.
+        return {
+          ...ui,
+          // Published mobile class names are integers even if saved with decimals.
+          type: "in_int",
+          range: "0,",
+          ph: ui.options.find((option) => option.v === "") || { RU: "Не задан", EN: "None" },
+          variants: ui.options.map((option) => option.v).filter(Boolean),
+        };
+      }
+      paddingFieldsHook = { original, wrapped };
+      window.edrec__drawUI__getFieldObj = wrapped;
+    }
+    function notice(text, error = false, duration = error ? 8000 : 3500) {
       const safe =
         typeof window.tp__escapeHtml === "function"
           ? window.tp__escapeHtml(text)
@@ -1307,7 +1536,7 @@
       if (typeof window.td__showBubbleNotice === "function")
         window.td__showBubbleNotice(
           safe,
-          error ? 8000 : 3500,
+          duration,
           error ? "error" : "",
         );
       else console[error ? "warn" : "info"]("[Tilda Tools] " + text);
@@ -1446,7 +1675,7 @@
     }
     function openTab(url) {
       if (typeof GM_openInTab !== "function")
-        throw new Error("Для открытия после публикации обновите скрипт в Tampermonkey.");
+        throw new Error("Для открытия новой вкладки обновите скрипт в Tampermonkey.");
       // The extension opens a tab after async publication; no blank popup or DOM access.
       return GM_openInTab(validURL(url).href, { active: true, setParent: true });
     }
@@ -1846,6 +2075,9 @@
     }
     function scan() {
       if (stopped) return;
+      installPaddingFields();
+      scanPaddingHelp();
+      paddingPreviewStyle = renderMobilePadding(document, "tml-mobile-padding-preview");
       scanButtons();
       scanRecordButtons();
       for (const [frame, entry] of attached)
@@ -1872,7 +2104,7 @@
       });
     }
     const controlsSelector =
-      '#mainmenu,#page_menu_publishlink,.tml-frame,.tml-page-tool,.pe-content__savebtns-wrapper,button[onclick*="edrec__sendForm"],#allrecords > .record,.tp-record-ui,.tp-record-ui__group';
+      '#mainmenu,#page_menu_publishlink,.tml-frame,.tml-page-tool,.pe-content__savebtns-wrapper,button[onclick*="edrec__sendForm"],#allrecords > .record,.tp-record-ui,.tp-record-ui__group,.t-rec,.pe-settings-form';
     const observer = new MutationObserver((records) => {
       for (const record of records)
         if (record.type === "attributes") updateRecordButtons(record.target);
@@ -1891,6 +2123,12 @@
     observer.observe(document.body, { childList: true, subtree: true,
       attributes: true, attributeFilter: ["data-custom-class", "recordid"] });
     window.addEventListener("tml:ready", scan, { signal: abort.signal });
+    // This event precedes field rendering, even when Tilda loads after us.
+    window.addEventListener("edrec:record-panel-open", installPaddingFields, {
+      signal: abort.signal,
+    });
+    window.addEventListener("focus", refreshPaddingHeadOnReturn, { signal: abort.signal });
+    document.addEventListener("visibilitychange", refreshPaddingHeadOnReturn, { signal: abort.signal });
     window.addEventListener("keydown", keydown, {
       capture: true,
       signal: abort.signal,
@@ -1927,9 +2165,16 @@
       dispose() {
         stopped = true;
         projectController?.abort();
+        paddingHeadCheck?.controller.abort();
+        paddingPanel?.root.remove();
         abort.abort();
         observer.disconnect();
         clearTimeout(timer);
+        if (paddingFieldsHook && window.edrec__drawUI__getFieldObj === paddingFieldsHook.wrapped)
+          window.edrec__drawUI__getFieldObj = paddingFieldsHook.original;
+        if (paddingValidationHook && window.edrec__validation__getFunction === paddingValidationHook.wrapped)
+          window.edrec__validation__getFunction = paddingValidationHook.original;
+        paddingPreviewStyle?.remove();
         attached.forEach((e) => e.dispose());
         attached.clear();
         recordButtons.forEach((entry) => { entry.id.remove(); entry.class.remove(); });
